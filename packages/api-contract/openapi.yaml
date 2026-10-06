@@ -1,0 +1,19 @@
+openapi: 3.1.0
+info:
+  title: Memory API
+  version: 0.1.0
+paths:
+  /health/live:
+    get:
+      operationId: getLiveness
+      responses:
+        "200":
+          description: Process is alive
+  /health/ready:
+    get:
+      operationId: getReadiness
+      responses:
+        "200":
+          description: Dependencies are ready
+        "503":
+          description: One or more dependencies are unavailable
