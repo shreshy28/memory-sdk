@@ -36,6 +36,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
       - run: docker compose -f deploy/compose.yaml config
       - run: docker compose -f deploy/compose.yaml up -d --build --wait
       - run: make smoke-health
