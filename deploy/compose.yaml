@@ -1,0 +1,61 @@
+name: memory-sdk
+
+services:
+  database:
+    image: pgvector/pgvector:pg18
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-memory}
+      POSTGRES_USER: ${POSTGRES_USER:-memory}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-memory}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - memory-postgres:/var/lib/postgresql
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    environment: &runtime-environment
+      MEMORY_DATABASE_URL: ${MEMORY_DATABASE_URL:-postgresql+asyncpg://memory:memory@database:5432/memory}
+      MEMORY_MIGRATION_REVISION: ${MEMORY_MIGRATION_REVISION:-0001_baseline}
+      MEMORY_LOG_LEVEL: ${MEMORY_LOG_LEVEL:-info}
+    command:
+      - /bin/sh
+      - -c
+      - uv run alembic -c packages/persistence-postgres/alembic.ini upgrade head && uv run memory-api
+    depends_on:
+      database:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready', timeout=2)"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "8000:8000"
+
+  worker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    environment:
+      <<: *runtime-environment
+      MEMORY_WORKER_ID: ${MEMORY_WORKER_ID:-worker-compose-1}
+    command: ["uv", "run", "memory-worker"]
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health/ready', timeout=2)"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "8001:8001"
+
+volumes:
+  memory-postgres:
