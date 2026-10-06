@@ -1,0 +1,21 @@
+
+# Riptide artifacts (cloud-synced)
+.humanlayer/tasks/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Web
+node_modules/
+.next/
+
+# Local configuration
+.env
+coverage.xml
+.coverage

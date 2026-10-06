@@ -1,0 +1,1 @@
+"""Content-safe telemetry adapters."""
