@@ -1,0 +1,9 @@
+{
+  "name": "memory-sdk",
+  "private": true,
+  "packageManager": "pnpm@10.6.4",
+  "scripts": {
+    "console:dev": "pnpm --dir apps/console dev",
+    "console:build": "pnpm --dir apps/console build"
+  }
+}
