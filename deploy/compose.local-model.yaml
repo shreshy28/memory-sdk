@@ -1,0 +1,11 @@
+services:
+  local-model:
+    image: ollama/ollama:latest
+    profiles: ["local-model"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - memory-models:/root/.ollama
+
+volumes:
+  memory-models:
