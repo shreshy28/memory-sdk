@@ -3,13 +3,23 @@ from memory_application.ports.embedding import EmbeddingProvider
 from memory_application.ports.health import ReadinessProbe
 from memory_application.ports.model import ModelProvider
 from memory_application.ports.object_store import ObjectStore
+from memory_application.ports.repositories import (
+    Correction,
+    IdentityRepository,
+    MemoryRepository,
+    NewMemory,
+)
 from memory_application.ports.telemetry import TelemetrySink
 
 __all__ = [
     "BackgroundExecutor",
+    "Correction",
     "EmbeddingProvider",
+    "IdentityRepository",
+    "MemoryRepository",
     "ModelProvider",
     "ObjectStore",
+    "NewMemory",
     "ReadinessProbe",
     "TelemetrySink",
 ]
