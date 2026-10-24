@@ -1,19 +1,33 @@
-openapi: 3.1.0
-info:
-  title: Memory API
-  version: 0.1.0
-paths:
-  /health/live:
-    get:
-      operationId: getLiveness
-      responses:
-        "200":
-          description: Process is alive
-  /health/ready:
-    get:
-      operationId: getReadiness
-      responses:
-        "200":
-          description: Dependencies are ready
-        "503":
-          description: One or more dependencies are unavailable
+{
+  "openapi": "3.1.0",
+  "info": {"title": "Memory API", "version": "0.1.0"},
+  "security": [{"bearerAuth": []}],
+  "paths": {
+    "/health/live": {"get": {"operationId": "getLiveness", "security": [], "responses": {"200": {"description": "Process is alive"}}}},
+    "/health/ready": {"get": {"operationId": "getReadiness", "security": [], "responses": {"200": {"description": "Dependencies are ready"}, "503": {"description": "Dependencies unavailable"}}}},
+    "/v1/memories": {
+      "post": {"operationId": "addMemory", "parameters": [{"$ref": "#/components/parameters/IdempotencyKey"}], "responses": {"201": {"description": "Memory and committed operation receipt"}, "400": {"$ref": "#/components/responses/Error"}, "401": {"$ref": "#/components/responses/Error"}}},
+      "get": {"operationId": "listMemories", "responses": {"200": {"description": "Stable cursor-ordered current memories"}, "401": {"$ref": "#/components/responses/Error"}}}
+    },
+    "/v1/memories/{memory_id}": {
+      "parameters": [{"$ref": "#/components/parameters/MemoryId"}],
+      "get": {"operationId": "getMemory", "responses": {"200": {"description": "Current memory and provenance"}, "404": {"$ref": "#/components/responses/Error"}}},
+      "patch": {"operationId": "correctMemory", "parameters": [{"$ref": "#/components/parameters/IdempotencyKey"}], "responses": {"200": {"description": "Appended correction and operation"}, "409": {"$ref": "#/components/responses/Error"}}},
+      "delete": {"operationId": "suppressMemory", "parameters": [{"$ref": "#/components/parameters/IdempotencyKey"}], "responses": {"202": {"description": "Immediate suppression and erasure operation"}, "404": {"$ref": "#/components/responses/Error"}}}
+    },
+    "/v1/memories/{memory_id}/history": {"get": {"operationId": "getMemoryHistory", "parameters": [{"$ref": "#/components/parameters/MemoryId"}], "responses": {"200": {"description": "Append-only memory versions"}, "404": {"$ref": "#/components/responses/Error"}}}},
+    "/v1/operations/{operation_id}": {"get": {"operationId": "getOperation", "parameters": [{"name": "operation_id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}], "responses": {"200": {"description": "Operation status"}, "404": {"$ref": "#/components/responses/Error"}}}}
+  },
+  "components": {
+    "securitySchemes": {"bearerAuth": {"type": "http", "scheme": "bearer"}},
+    "parameters": {
+      "IdempotencyKey": {"name": "Idempotency-Key", "in": "header", "required": true, "schema": {"type": "string", "maxLength": 255}},
+      "MemoryId": {"name": "memory_id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}
+    },
+    "responses": {"Error": {"description": "Safe versioned error envelope"}},
+    "schemas": {
+      "OperationStatus": {"type": "string", "enum": ["accepted", "committed", "processing", "searchable", "completed", "rejected", "retryable_failed", "terminal_failed"]},
+      "ErrorEnvelope": {"type": "object", "required": ["error"], "properties": {"error": {"type": "object", "required": ["code", "message", "correlation_id", "retryable"], "properties": {"code": {"type": "string"}, "message": {"type": "string"}, "correlation_id": {"type": "string"}, "retryable": {"type": "boolean"}, "details": {"type": ["object", "null"]}}}}}
+    }
+  }
+}
