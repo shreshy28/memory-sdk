@@ -7,8 +7,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class ApiSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="MEMORY_", env_file=".env", extra="ignore")
 
-    database_url: str = Field(default="postgresql+asyncpg://memory:memory@localhost:5432/memory")
-    migration_revision: str = "0001_baseline"
+    database_url: str = Field(default="postgresql+asyncpg://memory:memory@localhost:55432/memory")
+    migration_revision: str = "0002_memory_kernel"
     log_level: str = "info"
 
 
