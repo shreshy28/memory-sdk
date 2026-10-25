@@ -8,6 +8,7 @@ dependencies = [
   "asyncpg>=0.30.0",
   "memory-application",
   "memory-domain",
+  "pgvector>=0.4.1",
   "sqlalchemy[asyncio]>=2.0.43",
 ]
 
