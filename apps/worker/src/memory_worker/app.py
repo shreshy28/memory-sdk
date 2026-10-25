@@ -1,13 +1,26 @@
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Response, status
-from memory_application.ports import ReadinessProbe
+from memory_application.ports import EmbeddingProvider, ModelProvider, ReadinessProbe
+from memory_application.workflows import FormationWorkflow
 from memory_domain import ComponentStatus, HealthReport
-from memory_postgres import PostgresReadinessProbe
+from memory_postgres import (
+    PostgresBackgroundExecutor,
+    PostgresFormationRepository,
+    PostgresReadinessProbe,
+)
+from memory_providers import (
+    DeterministicEmbeddingProvider,
+    DeterministicModelProvider,
+    OpenAICompatibleProvider,
+)
 from pydantic import BaseModel
 
 from memory_worker.config import get_settings
+from memory_worker.formation import FormationJobHandler
+from memory_worker.leasing import LeaseWorker
 
 
 class WorkerReadinessProbe:
@@ -38,10 +51,38 @@ def create_app(probe: ReadinessProbe | None = None) -> FastAPI:
         settings.database_url, settings.migration_revision
     )
     readiness_probe = WorkerReadinessProbe(database_probe)
+    executor = PostgresBackgroundExecutor(settings.database_url)
+    formation_repository = PostgresFormationRepository(settings.database_url)
+    model: ModelProvider
+    embeddings: EmbeddingProvider
+    if settings.provider == "fake":
+        model = DeterministicModelProvider()
+        embeddings = DeterministicEmbeddingProvider()
+    else:
+        provider = OpenAICompatibleProvider(
+            base_url=settings.provider_base_url,
+            model=settings.provider_model,
+            embedding_model=settings.embedding_model,
+            api_key=settings.provider_api_key,
+        )
+        model = provider
+        embeddings = provider
+    worker = LeaseWorker(
+        executor,
+        settings.worker_id,
+        FormationJobHandler(FormationWorkflow(formation_repository, model, embeddings)),
+    )
+    run_jobs = probe is None
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        task = asyncio.create_task(worker.run()) if run_jobs else None
         yield
+        if task is not None:
+            worker.stop()
+            await task
+        await executor.close()
+        await formation_repository.close()
         close = getattr(database_probe, "close", None)
         if close is not None:
             await close()

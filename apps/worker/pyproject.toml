@@ -8,6 +8,7 @@ dependencies = [
   "memory-application",
   "memory-domain",
   "memory-postgres",
+  "memory-providers",
   "pydantic-settings>=2.11.0",
   "uvicorn[standard]>=0.37.0",
 ]
@@ -16,6 +17,7 @@ dependencies = [
 memory-application = { workspace = true }
 memory-domain = { workspace = true }
 memory-postgres = { workspace = true }
+memory-providers = { workspace = true }
 
 [project.scripts]
 memory-worker = "memory_worker.main:run"
