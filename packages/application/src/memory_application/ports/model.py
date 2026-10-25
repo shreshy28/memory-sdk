@@ -9,6 +9,14 @@ class ModelResult:
     model: str
     input_tokens: int
     output_tokens: int
+    safety_outcome: str = "allowed"
+
+
+class ProviderError(Exception):
+    def __init__(self, code: str, *, retryable: bool) -> None:
+        super().__init__(code)
+        self.code = code
+        self.retryable = retryable
 
 
 class ModelProvider(Protocol):

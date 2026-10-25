@@ -10,6 +10,9 @@ class WorkItem:
     kind: str
     payload: dict[str, Any]
     available_at: datetime
+    operation_id: UUID | None = None
+    attempts: int = 0
+    lease_expires_at: datetime | None = None
 
 
 class BackgroundExecutor(Protocol):
@@ -18,5 +21,9 @@ class BackgroundExecutor(Protocol):
     async def lease(self, *, owner: str, limit: int) -> list[WorkItem]: ...
 
     async def complete(self, item_id: UUID, *, owner: str) -> None: ...
+
+    async def heartbeat(self, item_id: UUID, *, owner: str) -> bool: ...
+
+    async def retry(self, item_id: UUID, *, owner: str, delay_seconds: float) -> None: ...
 
     async def cancel(self, item_id: UUID) -> None: ...
