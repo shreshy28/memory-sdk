@@ -42,6 +42,12 @@ class DirectEvidence:
 
 
 @dataclass(frozen=True, slots=True)
+class EpisodeEvidence:
+    episode_id: UUID
+    evidence_role: str
+
+
+@dataclass(frozen=True, slots=True)
 class MemoryVersion:
     id: UUID
     memory_id: UUID
@@ -57,6 +63,7 @@ class MemoryVersion:
     valid_from: datetime | None = None
     valid_to: datetime | None = None
     direct_evidence: DirectEvidence | None = None
+    episode_evidence: tuple[EpisodeEvidence, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

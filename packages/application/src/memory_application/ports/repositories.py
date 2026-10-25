@@ -4,7 +4,16 @@ from datetime import datetime
 from typing import Any, Protocol
 from uuid import UUID
 
-from memory_domain import Memory, MemoryKind, MemoryVersion, Operation, RequestContext, Sensitivity
+from memory_domain import (
+    Episode,
+    EpisodeKind,
+    Memory,
+    MemoryKind,
+    MemoryVersion,
+    Operation,
+    RequestContext,
+    Sensitivity,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +41,29 @@ class Correction:
     sensitivity: Sensitivity | None = None
     valid_from: datetime | None = None
     valid_to: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class NewEpisode:
+    subject_id: UUID
+    kind: EpisodeKind
+    content: str
+    occurred_at: datetime
+    source: str
+    sensitivity: Sensitivity
+    agent_id: UUID | None = None
+    session_id: UUID | None = None
+    role: str | None = None
+    source_ref: str | None = None
+    consent_basis: str | None = None
+
+
+class EpisodeRepository(Protocol):
+    async def append_episode(
+        self, context: RequestContext, command: NewEpisode, idempotency_key: str
+    ) -> tuple[Episode, Operation]: ...
+
+    async def get_episode(self, context: RequestContext, episode_id: UUID) -> Episode: ...
 
 
 class MemoryRepository(Protocol):

@@ -1,10 +1,12 @@
 """Framework-free domain primitives for the memory platform."""
 
+from memory_domain.episode import Episode, EpisodeKind, EpisodeNotFoundError, EpisodeStatus
 from memory_domain.health import ComponentStatus, HealthReport
 from memory_domain.identity import AuthorizationError, RequestContext
 from memory_domain.memory import (
     ConcurrentCorrectionError,
     DirectEvidence,
+    EpisodeEvidence,
     InvalidMemoryError,
     Memory,
     MemoryKind,
@@ -22,6 +24,11 @@ __all__ = [
     "ComponentStatus",
     "ConcurrentCorrectionError",
     "DirectEvidence",
+    "Episode",
+    "EpisodeEvidence",
+    "EpisodeKind",
+    "EpisodeNotFoundError",
+    "EpisodeStatus",
     "HealthReport",
     "InvalidMemoryError",
     "Memory",
