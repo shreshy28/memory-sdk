@@ -1,15 +1,22 @@
 # ruff: noqa: E501
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import cast
 
 from fastapi import FastAPI, Request, Response, status
 from fastapi.responses import JSONResponse
-from memory_application import MemoryService
-from memory_application.ports import IdentityRepository, MemoryRepository, ReadinessProbe
+from memory_application import EpisodeService, MemoryService
+from memory_application.ports import (
+    EpisodeRepository,
+    IdentityRepository,
+    MemoryRepository,
+    ReadinessProbe,
+)
 from memory_domain import (
     AuthorizationError,
     ComponentStatus,
     ConcurrentCorrectionError,
+    EpisodeNotFoundError,
     MemoryNotFoundError,
 )
 from memory_postgres import PostgresMemoryRepository, PostgresReadinessProbe
@@ -44,6 +51,11 @@ def create_app(
     if identities is None:
         raise RuntimeError("identity repository is required")
     service = MemoryService(memory_repository)
+    episode_service = (
+        EpisodeService(cast(EpisodeRepository, memory_repository))
+        if hasattr(memory_repository, "append_episode")
+        else None
+    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -55,7 +67,7 @@ def create_app(
             await postgres_repository.close()
 
     app = FastAPI(title="Memory API", version="0.1.0", lifespan=lifespan)
-    app.include_router(create_router(service, identities.authenticate))
+    app.include_router(create_router(service, identities.authenticate, episode_service))
 
     def error(status_code: int, code: str, message: str, request: Request) -> JSONResponse:
         correlation_id = request.headers.get("X-Correlation-ID", "unavailable")
@@ -70,6 +82,10 @@ def create_app(
 
     @app.exception_handler(MemoryNotFoundError)
     async def not_found_error(request: Request, exc: MemoryNotFoundError) -> JSONResponse:
+        return error(404, "not_found", str(exc), request)
+
+    @app.exception_handler(EpisodeNotFoundError)
+    async def episode_not_found_error(request: Request, exc: EpisodeNotFoundError) -> JSONResponse:
         return error(404, "not_found", str(exc), request)
 
     @app.exception_handler(ConcurrentCorrectionError)

@@ -4,17 +4,21 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Query, status
-from memory_application import MemoryService
+from memory_application import EpisodeService, MemoryService
 from memory_domain import RequestContext
 
 from memory_api.schemas import (
     AddMemoryRequest,
+    AppendEpisodeRequest,
     CorrectMemoryRequest,
+    EpisodeMutationResponse,
+    EpisodeResponse,
     HistoryResponse,
     MemoryListResponse,
     MemoryResponse,
     MutationResponse,
     OperationResponse,
+    episode_response,
     memory_response,
     operation_response,
     version_response,
@@ -24,6 +28,7 @@ from memory_api.schemas import (
 def create_router(
     service: MemoryService,
     authenticate: Callable[[str], Awaitable[RequestContext]],
+    episode_service: EpisodeService | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/v1", tags=["memories"])
 
@@ -37,6 +42,25 @@ def create_router(
 
     TrustedContext = Annotated[RequestContext, Depends(context)]
     IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=255)]
+
+    if episode_service is not None:
+
+        @router.post(
+            "/episodes",
+            response_model=EpisodeMutationResponse,
+            status_code=status.HTTP_202_ACCEPTED,
+        )
+        async def append_episode(
+            payload: AppendEpisodeRequest, trusted: TrustedContext, key: IdempotencyKey
+        ) -> EpisodeMutationResponse:
+            episode, operation = await episode_service.append(trusted, payload.to_command(), key)
+            return EpisodeMutationResponse(
+                episode=episode_response(episode), operation=operation_response(operation)
+            )
+
+        @router.get("/episodes/{episode_id}", response_model=EpisodeResponse)
+        async def get_episode(episode_id: UUID, trusted: TrustedContext) -> EpisodeResponse:
+            return episode_response(await episode_service.get(trusted, episode_id))
 
     @router.post("/memories", response_model=MutationResponse, status_code=status.HTTP_201_CREATED)
     async def add_memory(

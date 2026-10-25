@@ -3,8 +3,8 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from memory_application.ports import Correction, NewMemory
-from memory_domain import Memory, MemoryKind, Operation, Sensitivity
+from memory_application.ports import Correction, NewEpisode, NewMemory
+from memory_domain import Episode, EpisodeKind, Memory, MemoryKind, Operation, Sensitivity
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -18,6 +18,46 @@ class ErrorDetail(BaseModel):
 
 class ErrorEnvelope(BaseModel):
     error: ErrorDetail
+
+
+class AppendEpisodeRequest(BaseModel):
+    subject_id: UUID
+    kind: EpisodeKind = EpisodeKind.CONVERSATION
+    content: str = Field(min_length=1, max_length=1_000_000)
+    occurred_at: datetime
+    source: str = Field(min_length=1, max_length=200)
+    sensitivity: Sensitivity = Sensitivity.GENERAL
+    agent_id: UUID | None = None
+    session_id: UUID | None = None
+    role: str | None = Field(default=None, max_length=50)
+    source_ref: str | None = Field(default=None, max_length=500)
+    consent_basis: str | None = Field(default=None, max_length=200)
+
+    def to_command(self) -> NewEpisode:
+        return NewEpisode(**self.model_dump())
+
+
+class EpisodeResponse(BaseModel):
+    id: UUID
+    subject_id: UUID
+    agent_id: UUID | None
+    session_id: UUID | None
+    kind: EpisodeKind
+    role: str | None
+    content: str
+    content_hash: str
+    occurred_at: datetime
+    ingested_at: datetime
+    source: str
+    source_ref: str | None
+    sensitivity: Sensitivity
+    consent_basis: str | None
+    status: str
+
+
+class EpisodeMutationResponse(BaseModel):
+    episode: EpisodeResponse
+    operation: "OperationResponse"
 
 
 class AddMemoryRequest(BaseModel):
@@ -74,8 +114,9 @@ class CorrectMemoryRequest(BaseModel):
 class EvidenceResponse(BaseModel):
     type: str = "direct_entry"
     id: UUID
-    actor_id: UUID
-    recorded_at: datetime
+    actor_id: UUID | None = None
+    recorded_at: datetime | None = None
+    evidence_role: str | None = None
 
 
 class MemoryVersionResponse(BaseModel):
@@ -146,6 +187,26 @@ def memory_response(memory: Memory) -> MemoryResponse:
     )
 
 
+def episode_response(episode: Episode) -> EpisodeResponse:
+    return EpisodeResponse(
+        id=episode.id,
+        subject_id=episode.subject_id,
+        agent_id=episode.agent_id,
+        session_id=episode.session_id,
+        kind=episode.kind,
+        role=episode.role,
+        content=episode.content,
+        content_hash=episode.content_hash,
+        occurred_at=episode.occurred_at,
+        ingested_at=episode.ingested_at,
+        source=episode.source,
+        source_ref=episode.source_ref,
+        sensitivity=episode.sensitivity,
+        consent_basis=episode.consent_basis,
+        status=episode.status.value,
+    )
+
+
 def version_response(version: Any) -> MemoryVersionResponse:
     evidence = []
     if version.direct_evidence is not None:
@@ -156,6 +217,14 @@ def version_response(version: Any) -> MemoryVersionResponse:
                 recorded_at=version.direct_evidence.recorded_at,
             )
         )
+    evidence.extend(
+        EvidenceResponse(
+            type="episode",
+            id=item.episode_id,
+            evidence_role=item.evidence_role,
+        )
+        for item in version.episode_evidence
+    )
     return MemoryVersionResponse(
         id=version.id,
         version=version.version,
