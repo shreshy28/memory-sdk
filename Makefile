@@ -1,4 +1,4 @@
-.PHONY: lint typecheck test-unit architecture-check smoke-health db-reset migrate migration-check openapi-check ci
+.PHONY: lint typecheck test-unit architecture-check smoke-health smoke-formation db-reset migrate migration-check openapi-check ci
 
 lint:
 	uv run ruff check .
@@ -15,6 +15,9 @@ architecture-check:
 
 smoke-health:
 	uv run python scripts/smoke_health.py
+
+smoke-formation:
+	uv run python scripts/smoke_formation.py
 
 db-reset:
 	docker compose -f deploy/compose.yaml down -v
