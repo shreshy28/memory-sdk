@@ -9,6 +9,12 @@
       "post": {"operationId": "addMemory", "parameters": [{"$ref": "#/components/parameters/IdempotencyKey"}], "responses": {"201": {"description": "Memory and committed operation receipt"}, "400": {"$ref": "#/components/responses/Error"}, "401": {"$ref": "#/components/responses/Error"}}},
       "get": {"operationId": "listMemories", "responses": {"200": {"description": "Stable cursor-ordered current memories"}, "401": {"$ref": "#/components/responses/Error"}}}
     },
+    "/v1/episodes": {
+      "post": {"operationId": "appendEpisode", "parameters": [{"$ref": "#/components/parameters/IdempotencyKey"}], "responses": {"202": {"description": "Durably committed episode and formation operation"}, "400": {"$ref": "#/components/responses/Error"}, "401": {"$ref": "#/components/responses/Error"}}}
+    },
+    "/v1/episodes/{episode_id}": {
+      "get": {"operationId": "getEpisode", "parameters": [{"name": "episode_id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}], "responses": {"200": {"description": "Authorized source episode evidence"}, "404": {"$ref": "#/components/responses/Error"}}}
+    },
     "/v1/memories/{memory_id}": {
       "parameters": [{"$ref": "#/components/parameters/MemoryId"}],
       "get": {"operationId": "getMemory", "responses": {"200": {"description": "Current memory and provenance"}, "404": {"$ref": "#/components/responses/Error"}}},
