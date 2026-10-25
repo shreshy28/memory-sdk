@@ -3,7 +3,7 @@ name = "memory-providers"
 version = "0.1.0"
 description = "Model and embedding provider adapters"
 requires-python = ">=3.13"
-dependencies = ["memory-application"]
+dependencies = ["httpx>=0.28.1", "memory-application"]
 
 [tool.uv.sources]
 memory-application = { workspace = true }
