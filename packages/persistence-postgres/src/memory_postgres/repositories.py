@@ -7,11 +7,16 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from memory_application.ports.repositories import Correction, NewMemory
+from memory_application.ports.repositories import Correction, NewEpisode, NewMemory
 from memory_domain import (
     AuthorizationError,
     ConcurrentCorrectionError,
     DirectEvidence,
+    Episode,
+    EpisodeEvidence,
+    EpisodeKind,
+    EpisodeNotFoundError,
+    EpisodeStatus,
     Memory,
     MemoryKind,
     MemoryNotFoundError,
@@ -60,6 +65,100 @@ class PostgresMemoryRepository:
             principal_id=row["principal_id"],
             api_key_id=row["id"],
         )
+
+    async def append_episode(
+        self, context: RequestContext, command: NewEpisode, idempotency_key: str
+    ) -> tuple[Episode, Operation]:
+        request_hash = _request_hash("episode.append", command)
+        async with self._engine.begin() as connection:
+            await set_trusted_scope(connection, context)
+            replay = await self._replay(connection, context, idempotency_key, request_hash)
+            if replay is not None:
+                return await self._get_episode(connection, context, replay.resource_id), replay
+            await self._ensure_subject(connection, context, command.subject_id)
+            now, episode_id, operation_id, job_id = datetime.now(UTC), uuid4(), uuid4(), uuid4()
+            digest = hashlib.sha256(command.content.encode()).hexdigest()
+            await connection.execute(
+                text(
+                    "INSERT INTO episodes (id, tenant_id, project_id, subject_id, agent_id, session_id, kind, role, content, content_hash, occurred_at, ingested_at, source, source_ref, sensitivity, consent_basis, status) VALUES (:id, :tenant, :project, :subject, :agent, :session, :kind, :role, :content, :hash, :occurred, :ingested, :source, :source_ref, :sensitivity, :consent, 'accepted')"
+                ),
+                {
+                    "id": episode_id,
+                    "tenant": context.tenant_id,
+                    "project": context.project_id,
+                    "subject": command.subject_id,
+                    "agent": command.agent_id,
+                    "session": command.session_id,
+                    "kind": command.kind.value,
+                    "role": command.role,
+                    "content": command.content,
+                    "hash": digest,
+                    "occurred": command.occurred_at,
+                    "ingested": now,
+                    "source": command.source,
+                    "source_ref": command.source_ref,
+                    "sensitivity": command.sensitivity.value,
+                    "consent": command.consent_basis,
+                },
+            )
+            operation = Operation(
+                operation_id, "episode.form", OperationStatus.COMMITTED, now, episode_id, now
+            )
+            await self._store_operation(connection, context, operation)
+            await connection.execute(
+                text(
+                    "INSERT INTO outbox_jobs (id, tenant_id, project_id, operation_id, job_type, deduplication_key, payload_version, payload, status, available_at) VALUES (:id, :tenant, :project, :operation, 'formation', :dedupe, 1, CAST(:payload AS jsonb), 'pending', :now)"
+                ),
+                {
+                    "id": job_id,
+                    "tenant": context.tenant_id,
+                    "project": context.project_id,
+                    "operation": operation_id,
+                    "dedupe": f"formation:{episode_id}:v1",
+                    "payload": json.dumps(
+                        {
+                            "episode_id": str(episode_id),
+                            "tenant_id": str(context.tenant_id),
+                            "project_id": str(context.project_id),
+                            "principal_id": str(context.principal_id),
+                        }
+                    ),
+                    "now": now,
+                },
+            )
+            await self._store_idempotency(
+                connection, context, idempotency_key, request_hash, operation
+            )
+            await self._audit(
+                connection, context, "episode.append", episode_id, now, resource_type="episode"
+            )
+            return await self._get_episode(connection, context, episode_id), operation
+
+    async def get_episode(self, context: RequestContext, episode_id: UUID) -> Episode:
+        async with self._engine.begin() as connection:
+            await set_trusted_scope(connection, context)
+            return await self._get_episode(connection, context, episode_id)
+
+    async def _get_episode(
+        self, connection: AsyncConnection, context: RequestContext, episode_id: UUID | None
+    ) -> Episode:
+        if episode_id is None:
+            raise EpisodeNotFoundError("episode not found")
+        row = (
+            (
+                await connection.execute(
+                    text(
+                        "SELECT * FROM episodes WHERE id = :id AND tenant_id = :tenant AND project_id = :project"
+                    ),
+                    {"id": episode_id, "tenant": context.tenant_id, "project": context.project_id},
+                )
+            )
+            .mappings()
+            .one_or_none()
+        )
+        if row is None:
+            raise EpisodeNotFoundError("episode not found")
+        return _episode_from_row(row)
 
     async def add(
         self, context: RequestContext, command: NewMemory, idempotency_key: str
@@ -526,10 +625,11 @@ class PostgresMemoryRepository:
         action: str,
         resource_id: UUID,
         now: datetime,
+        resource_type: str = "memory",
     ) -> None:
         await connection.execute(
             text(
-                "INSERT INTO audit_events (id, tenant_id, project_id, principal_id, action, resource_type, resource_id, occurred_at) VALUES (:id, :tenant, :project, :principal, :action, 'memory', :resource, :now)"
+                "INSERT INTO audit_events (id, tenant_id, project_id, principal_id, action, resource_type, resource_id, occurred_at) VALUES (:id, :tenant, :project, :principal, :action, :resource_type, :resource, :now)"
             ),
             {
                 "id": uuid4(),
@@ -537,6 +637,7 @@ class PostgresMemoryRepository:
                 "project": context.project_id,
                 "principal": context.principal_id,
                 "action": action,
+                "resource_type": resource_type,
                 "resource": resource_id,
                 "now": now,
             },
@@ -544,11 +645,33 @@ class PostgresMemoryRepository:
 
 
 def _memory_select() -> str:
-    return "SELECT m.*, v.version, v.text, v.structured_value, v.confidence, v.importance, v.sensitivity, v.valid_from, v.valid_to, v.recorded_at, v.actor_id, v.reason, d.id AS evidence_id, d.actor_id AS evidence_actor_id, d.recorded_at AS evidence_recorded_at FROM memories m JOIN memory_versions v ON v.id = m.current_version_id JOIN memory_evidence e ON e.memory_version_id = v.id LEFT JOIN direct_entries d ON d.id = e.direct_entry_id LEFT JOIN suppression_markers s ON s.memory_id = m.id AND s.tenant_id = m.tenant_id AND s.project_id = m.project_id"
+    return "SELECT m.*, v.version, v.text, v.structured_value, v.confidence, v.importance, v.sensitivity, v.valid_from, v.valid_to, v.recorded_at, v.actor_id, v.reason, d.id AS evidence_id, d.actor_id AS evidence_actor_id, d.recorded_at AS evidence_recorded_at, e.episode_id, e.evidence_role FROM memories m JOIN memory_versions v ON v.id = m.current_version_id JOIN memory_evidence e ON e.memory_version_id = v.id LEFT JOIN direct_entries d ON d.id = e.direct_entry_id LEFT JOIN suppression_markers s ON s.memory_id = m.id AND s.tenant_id = m.tenant_id AND s.project_id = m.project_id"
+
+
+def _episode_from_row(row: RowMapping) -> Episode:
+    return Episode(
+        row["id"],
+        row["tenant_id"],
+        row["project_id"],
+        row["subject_id"],
+        EpisodeKind(row["kind"]),
+        row["content"],
+        row["content_hash"],
+        row["occurred_at"],
+        row["ingested_at"],
+        row["source"],
+        Sensitivity(row["sensitivity"]),
+        EpisodeStatus(row["status"]),
+        row["agent_id"],
+        row["session_id"],
+        row["role"],
+        row["source_ref"],
+        row["consent_basis"],
+    )
 
 
 def _version_select() -> str:
-    return "SELECT v.*, d.id AS evidence_id, d.actor_id AS evidence_actor_id, d.recorded_at AS evidence_recorded_at FROM memory_versions v JOIN memory_evidence e ON e.memory_version_id = v.id LEFT JOIN direct_entries d ON d.id = e.direct_entry_id"
+    return "SELECT v.*, d.id AS evidence_id, d.actor_id AS evidence_actor_id, d.recorded_at AS evidence_recorded_at, e.episode_id, e.evidence_role FROM memory_versions v JOIN memory_evidence e ON e.memory_version_id = v.id LEFT JOIN direct_entries d ON d.id = e.direct_entry_id"
 
 
 def _memory_from_row(row: RowMapping) -> Memory:
@@ -573,6 +696,11 @@ def _version_from_row(row: RowMapping) -> MemoryVersion:
         if row["evidence_id"] is not None
         else None
     )
+    episode_evidence = (
+        (EpisodeEvidence(row["episode_id"], row["evidence_role"]),)
+        if "episode_id" in row and row["episode_id"] is not None
+        else ()
+    )
     return MemoryVersion(
         row["current_version_id"] if "current_version_id" in row else row["id"],
         row["id"] if "current_version_id" in row else row["memory_id"],
@@ -588,6 +716,7 @@ def _version_from_row(row: RowMapping) -> MemoryVersion:
         row["valid_from"],
         row["valid_to"],
         evidence,
+        episode_evidence,
     )
 
 
