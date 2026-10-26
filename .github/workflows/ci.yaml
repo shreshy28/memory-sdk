@@ -42,5 +42,6 @@ jobs:
       - run: docker compose -f deploy/compose.yaml config
       - run: docker compose -f deploy/compose.yaml up -d --build --wait
       - run: make smoke-health
-      - run: make migration-check
+      - run: docker compose -f deploy/compose.yaml exec -T api uv run alembic -c packages/persistence-postgres/alembic.ini downgrade 0001_baseline
+      - run: docker compose -f deploy/compose.yaml exec -T api uv run alembic -c packages/persistence-postgres/alembic.ini upgrade head
       - run: uv run pytest tests/integration/test_postgres_hybrid_retrieval.py -q
