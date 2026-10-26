@@ -42,3 +42,5 @@ jobs:
       - run: docker compose -f deploy/compose.yaml config
       - run: docker compose -f deploy/compose.yaml up -d --build --wait
       - run: make smoke-health
+      - run: make migration-check
+      - run: uv run pytest tests/integration/test_postgres_hybrid_retrieval.py -q
