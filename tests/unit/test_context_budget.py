@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
+import pytest
 from memory_domain import (
     Memory,
     MemoryKind,
@@ -59,3 +60,25 @@ def test_compiler_preserves_degraded_status() -> None:
     package = compile_context((), 100, 20, RetrievalStatus.DEGRADED_TIMEOUT)
     assert package.retrieval_status is RetrievalStatus.DEGRADED_TIMEOUT
     assert package.rendered == ""
+
+
+def test_compiler_prioritizes_recent_context_within_total_budget() -> None:
+    memory = ranked("a memory that no longer fits", 1.0)
+
+    package = compile_context(
+        (memory,),
+        12,
+        2,
+        RetrievalStatus.COMPLETE,
+        ("The current task", "The latest reply"),
+    )
+
+    assert package.entries == ()
+    assert package.used_tokens == 8
+    assert package.rendered == "Recent context:\n- The current task\n- The latest reply"
+    assert [reason.value for _, reason in package.omissions] == ["budget_exceeded"]
+
+
+def test_compiler_rejects_recent_context_that_exceeds_budget() -> None:
+    with pytest.raises(ValueError, match="recent context"):
+        compile_context((), 4, 1, RetrievalStatus.COMPLETE, ("too much recent context",))

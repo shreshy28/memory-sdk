@@ -1,5 +1,6 @@
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from typing import cast
 from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
@@ -10,6 +11,7 @@ from memory_domain import (
     DirectEvidence,
     HealthReport,
     Memory,
+    MemoryKind,
     MemoryNotFoundError,
     MemoryStatus,
     MemoryVersion,
@@ -17,7 +19,9 @@ from memory_domain import (
     OperationStatus,
     ProvenanceMode,
     RequestContext,
+    Sensitivity,
 )
+from memory_retrieval import RankedMemory, RetrievalService, RetrievalStatus, SearchResult
 
 
 class ReadyProbe:
@@ -193,6 +197,45 @@ class InMemoryRepository:
         return None
 
 
+class FakeRetrieval:
+    def __init__(self, result: SearchResult) -> None:
+        self.result = result
+        self.calls: list[dict[str, object]] = []
+
+    async def search(self, context: RequestContext, **kwargs: object) -> SearchResult:
+        self.calls.append({"context": context, **kwargs})
+        return self.result
+
+
+def retrieval_memory(context: RequestContext, subject_id: UUID, text: str) -> Memory:
+    now, memory_id = datetime.now(UTC), uuid4()
+    version = MemoryVersion(
+        uuid4(),
+        memory_id,
+        1,
+        text,
+        None,
+        0.9,
+        0.8,
+        Sensitivity.GENERAL,
+        now,
+        context.principal_id,
+        "test",
+    )
+    return Memory(
+        memory_id,
+        context.tenant_id,
+        context.project_id,
+        subject_id,
+        MemoryKind.PREFERENCE,
+        ProvenanceMode.EXPLICIT,
+        MemoryStatus.ACTIVE,
+        version,
+        now,
+        now,
+    )
+
+
 def test_explicit_memory_contract_preserves_history_and_suppresses() -> None:
     context = RequestContext(uuid4(), uuid4(), uuid4())
     repository = InMemoryRepository()
@@ -244,3 +287,78 @@ def test_memory_routes_require_bearer_authentication() -> None:
     with TestClient(app) as client:
         response = client.get("/v1/memories")
     assert response.status_code == 422
+
+
+def test_search_and_context_contracts_expose_ranks_status_and_recent_context() -> None:
+    context, subject_id = RequestContext(uuid4(), uuid4(), uuid4()), uuid4()
+    memory = retrieval_memory(context, subject_id, "The user prefers tea")
+    result = SearchResult((RankedMemory(memory, 0.75, 1, 2),), RetrievalStatus.COMPLETE)
+    retrieval = FakeRetrieval(result)
+    app = create_app(
+        ReadyProbe(),
+        InMemoryRepository(),
+        FakeIdentity(context),
+        cast(RetrievalService, retrieval),
+    )
+    headers = {"Authorization": "Bearer valid-key"}
+
+    with TestClient(app) as client:
+        searched = client.post(
+            "/v1/memories/search",
+            headers=headers,
+            json={"query": "drink", "subject_id": str(subject_id), "top_k": 5},
+        )
+        compiled = client.post(
+            "/v1/context/compile",
+            headers=headers,
+            json={
+                "query": "drink",
+                "subject_id": str(subject_id),
+                "top_k": 5,
+                "total_budget": 100,
+                "reserved_instruction_tokens": 10,
+                "recent_context": ["The user asked for a recommendation"],
+            },
+        )
+
+    assert searched.status_code == 200
+    assert searched.json()["status"] == "complete"
+    assert searched.json()["items"][0]["rank"] == {
+        "lexical_rank": 1,
+        "semantic_rank": 2,
+        "score": 0.75,
+        "rank_policy": "deterministic-v1",
+    }
+    assert compiled.status_code == 200
+    assert compiled.json()["retrieval_status"] == "complete"
+    assert compiled.json()["rendered"].startswith(
+        "Recent context:\n- The user asked for a recommendation\n\nRelevant memories:"
+    )
+    assert compiled.json()["used_tokens"] <= 90
+    assert len(retrieval.calls) == 2
+
+
+def test_context_contract_rejects_recent_context_outside_budget() -> None:
+    context, subject_id = RequestContext(uuid4(), uuid4(), uuid4()), uuid4()
+    retrieval = FakeRetrieval(SearchResult((), RetrievalStatus.COMPLETE))
+    app = create_app(
+        ReadyProbe(),
+        InMemoryRepository(),
+        FakeIdentity(context),
+        cast(RetrievalService, retrieval),
+    )
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.post(
+            "/v1/context/compile",
+            headers={"Authorization": "Bearer valid-key"},
+            json={
+                "query": "drink",
+                "subject_id": str(subject_id),
+                "total_budget": 4,
+                "recent_context": ["This cannot fit in four tokens"],
+            },
+        )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "invalid_request"

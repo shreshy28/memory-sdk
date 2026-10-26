@@ -52,6 +52,16 @@ class Source:
         )
 
 
+class UnavailableSource(Source):
+    async def search(
+        self,
+        context: RequestContext,
+        plan: QueryPlan,
+        query_vector: tuple[float, ...] | None = None,
+    ) -> tuple[Candidate, ...]:
+        raise ConnectionError("retrieval store unavailable")
+
+
 class Canonical:
     def __init__(self, memories: list[Memory]) -> None:
         self.memories = memories
@@ -99,3 +109,17 @@ async def test_search_returns_explicit_degraded_timeout() -> None:
     result = await service.search(context, query="tea", subject_id=subject, deadline_seconds=0.001)
     assert result.status is RetrievalStatus.DEGRADED_TIMEOUT
     assert result.items == ()
+
+
+@pytest.mark.asyncio
+async def test_search_returns_explicit_degraded_unavailable() -> None:
+    context, subject = RequestContext(uuid4(), uuid4(), uuid4()), uuid4()
+    service = RetrievalService(
+        UnavailableSource([], []), Source([], []), Canonical([]), Embeddings()
+    )
+
+    result = await service.search(context, query="tea", subject_id=subject)
+
+    assert result.status is RetrievalStatus.DEGRADED_UNAVAILABLE
+    assert result.items == ()
+    assert result.omitted == ("retrieval_unavailable",)

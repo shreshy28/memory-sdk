@@ -126,6 +126,7 @@ def create_router(
                 payload.total_budget,
                 payload.reserved_instruction_tokens + payload.reserved_task_tokens,
                 result.status,
+                tuple(payload.recent_context),
             )
             return context_response(package)
 
