@@ -9,6 +9,12 @@
       "post": {"operationId": "addMemory", "parameters": [{"$ref": "#/components/parameters/IdempotencyKey"}], "responses": {"201": {"description": "Memory and committed operation receipt"}, "400": {"$ref": "#/components/responses/Error"}, "401": {"$ref": "#/components/responses/Error"}}},
       "get": {"operationId": "listMemories", "responses": {"200": {"description": "Stable cursor-ordered current memories"}, "401": {"$ref": "#/components/responses/Error"}}}
     },
+    "/v1/memories/search": {
+      "post": {"operationId": "searchMemories", "responses": {"200": {"description": "Policy-safe ranked memories with retrieval status"}, "400": {"$ref": "#/components/responses/Error"}, "401": {"$ref": "#/components/responses/Error"}}}
+    },
+    "/v1/context/compile": {
+      "post": {"operationId": "compileMemoryContext", "responses": {"200": {"description": "Token-budgeted context package with provenance and omissions"}, "400": {"$ref": "#/components/responses/Error"}, "401": {"$ref": "#/components/responses/Error"}}}
+    },
     "/v1/episodes": {
       "post": {"operationId": "appendEpisode", "parameters": [{"$ref": "#/components/parameters/IdempotencyKey"}], "responses": {"202": {"description": "Durably committed episode and formation operation"}, "400": {"$ref": "#/components/responses/Error"}, "401": {"$ref": "#/components/responses/Error"}}}
     },
@@ -33,6 +39,7 @@
     "responses": {"Error": {"description": "Safe versioned error envelope"}},
     "schemas": {
       "OperationStatus": {"type": "string", "enum": ["accepted", "committed", "processing", "searchable", "completed", "rejected", "retryable_failed", "terminal_failed"]},
+      "RetrievalStatus": {"type": "string", "enum": ["complete", "degraded_timeout", "degraded_unavailable"]},
       "ErrorEnvelope": {"type": "object", "required": ["error"], "properties": {"error": {"type": "object", "required": ["code", "message", "correlation_id", "retryable"], "properties": {"code": {"type": "string"}, "message": {"type": "string"}, "correlation_id": {"type": "string"}, "retryable": {"type": "boolean"}, "details": {"type": ["object", "null"]}}}}}
     }
   }

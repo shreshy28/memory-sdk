@@ -19,7 +19,15 @@ from memory_domain import (
     EpisodeNotFoundError,
     MemoryNotFoundError,
 )
-from memory_postgres import PostgresMemoryRepository, PostgresReadinessProbe
+from memory_postgres import (
+    PostgresEligibilityRepository,
+    PostgresLexicalSearch,
+    PostgresMemoryRepository,
+    PostgresReadinessProbe,
+    PostgresVectorSearch,
+)
+from memory_providers import DeterministicEmbeddingProvider
+from memory_retrieval import RetrievalService
 from pydantic import BaseModel
 
 from memory_api.config import get_settings
@@ -36,6 +44,7 @@ def create_app(
     probe: ReadinessProbe | None = None,
     repository: MemoryRepository | None = None,
     identity_repository: IdentityRepository | None = None,
+    retrieval_service: RetrievalService | None = None,
 ) -> FastAPI:
     settings = get_settings()
     readiness_probe = probe or PostgresReadinessProbe(
@@ -56,6 +65,15 @@ def create_app(
         if hasattr(memory_repository, "append_episode")
         else None
     )
+    retrieval = retrieval_service
+    if retrieval is None and postgres_repository is not None:
+        engine = postgres_repository.engine
+        retrieval = RetrievalService(
+            PostgresLexicalSearch(engine),
+            PostgresVectorSearch(engine),
+            PostgresEligibilityRepository(engine),
+            DeterministicEmbeddingProvider(),
+        )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -67,7 +85,7 @@ def create_app(
             await postgres_repository.close()
 
     app = FastAPI(title="Memory API", version="0.1.0", lifespan=lifespan)
-    app.include_router(create_router(service, identities.authenticate, episode_service))
+    app.include_router(create_router(service, identities.authenticate, episode_service, retrieval))
 
     def error(status_code: int, code: str, message: str, request: Request) -> JSONResponse:
         correlation_id = request.headers.get("X-Correlation-ID", "unavailable")

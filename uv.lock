@@ -551,6 +551,8 @@ dependencies = [
     { name = "memory-application" },
     { name = "memory-domain" },
     { name = "memory-postgres" },
+    { name = "memory-providers" },
+    { name = "memory-retrieval" },
     { name = "pydantic-settings" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -561,6 +563,8 @@ requires-dist = [
     { name = "memory-application", editable = "packages/application" },
     { name = "memory-domain", editable = "packages/domain" },
     { name = "memory-postgres", editable = "packages/persistence-postgres" },
+    { name = "memory-providers", editable = "packages/providers" },
+    { name = "memory-retrieval", editable = "packages/retrieval" },
     { name = "pydantic-settings", specifier = ">=2.11.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.37.0" },
 ]
@@ -590,6 +594,7 @@ dependencies = [
     { name = "asyncpg" },
     { name = "memory-application" },
     { name = "memory-domain" },
+    { name = "memory-retrieval" },
     { name = "pgvector" },
     { name = "sqlalchemy", extra = ["asyncio"] },
 ]
@@ -600,6 +605,7 @@ requires-dist = [
     { name = "asyncpg", specifier = ">=0.30.0" },
     { name = "memory-application", editable = "packages/application" },
     { name = "memory-domain", editable = "packages/domain" },
+    { name = "memory-retrieval", editable = "packages/retrieval" },
     { name = "pgvector", specifier = ">=0.4.1" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.43" },
 ]

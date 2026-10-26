@@ -5,6 +5,7 @@ from uuid import UUID
 
 from memory_application.ports import Correction, NewEpisode, NewMemory
 from memory_domain import Episode, EpisodeKind, Memory, MemoryKind, Operation, Sensitivity
+from memory_retrieval import ContextPackage, SearchFilters, SearchResult
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -171,6 +172,110 @@ class MemoryListResponse(BaseModel):
 
 class HistoryResponse(BaseModel):
     items: list[MemoryVersionResponse]
+
+
+class SearchFilterRequest(BaseModel):
+    kinds: list[MemoryKind] = Field(default_factory=list)
+    sensitivities: list[Sensitivity] = Field(default_factory=lambda: [Sensitivity.GENERAL])
+    collection_id: UUID | None = None
+
+    def to_filters(self) -> SearchFilters:
+        return SearchFilters(tuple(self.kinds), tuple(self.sensitivities), self.collection_id)
+
+
+class SearchRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=10_000)
+    subject_id: UUID
+    filters: SearchFilterRequest = Field(default_factory=SearchFilterRequest)
+    top_k: int = Field(default=10, ge=1, le=100)
+    deadline_seconds: float = Field(default=1.0, gt=0, le=30)
+    debug: bool = False
+
+
+class RankComponentsResponse(BaseModel):
+    lexical_rank: int | None
+    semantic_rank: int | None
+    score: float
+    rank_policy: str
+
+
+class SearchItemResponse(BaseModel):
+    memory: MemoryResponse
+    rank: RankComponentsResponse
+
+
+class SearchResponse(BaseModel):
+    items: list[SearchItemResponse]
+    status: str
+    omissions: list[str]
+
+
+class CompileContextRequest(SearchRequest):
+    total_budget: int = Field(ge=1, le=100_000)
+    reserved_instruction_tokens: int = Field(default=0, ge=0)
+    reserved_task_tokens: int = Field(default=0, ge=0)
+    recent_context: list[str] = Field(default_factory=list, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_budget(self) -> "CompileContextRequest":
+        reserved = self.reserved_instruction_tokens + self.reserved_task_tokens
+        if reserved > self.total_budget:
+            raise ValueError("reserved tokens must fit within total_budget")
+        return self
+
+
+class ContextEntryResponse(BaseModel):
+    memory: MemoryResponse
+    token_cost: int
+    selection_reason: str = "ranked_and_budgeted"
+
+
+class ContextResponse(BaseModel):
+    entries: list[ContextEntryResponse]
+    rendered: str
+    total_budget: int
+    reserved_tokens: int
+    used_tokens: int
+    omissions: list[dict[str, str]]
+    retrieval_status: str
+
+
+def search_response(result: SearchResult) -> SearchResponse:
+    return SearchResponse(
+        items=[
+            SearchItemResponse(
+                memory=memory_response(item.memory),
+                rank=RankComponentsResponse(
+                    lexical_rank=item.lexical_rank,
+                    semantic_rank=item.semantic_rank,
+                    score=item.score,
+                    rank_policy=item.rank_policy,
+                ),
+            )
+            for item in result.items
+        ],
+        status=result.status.value,
+        omissions=list(result.omitted),
+    )
+
+
+def context_response(package: ContextPackage) -> ContextResponse:
+    return ContextResponse(
+        entries=[
+            ContextEntryResponse(
+                memory=memory_response(item.ranked.memory), token_cost=item.token_cost
+            )
+            for item in package.entries
+        ],
+        rendered=package.rendered,
+        total_budget=package.total_budget,
+        reserved_tokens=package.reserved_tokens,
+        used_tokens=package.used_tokens,
+        omissions=[
+            {"memory_id": item, "reason": reason.value} for item, reason in package.omissions
+        ],
+        retrieval_status=package.retrieval_status.value,
+    )
 
 
 def memory_response(memory: Memory) -> MemoryResponse:

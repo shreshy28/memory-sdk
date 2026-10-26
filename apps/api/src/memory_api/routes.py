@@ -6,10 +6,13 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, Query, status
 from memory_application import EpisodeService, MemoryService
 from memory_domain import RequestContext
+from memory_retrieval import RetrievalService, compile_context
 
 from memory_api.schemas import (
     AddMemoryRequest,
     AppendEpisodeRequest,
+    CompileContextRequest,
+    ContextResponse,
     CorrectMemoryRequest,
     EpisodeMutationResponse,
     EpisodeResponse,
@@ -18,9 +21,13 @@ from memory_api.schemas import (
     MemoryResponse,
     MutationResponse,
     OperationResponse,
+    SearchRequest,
+    SearchResponse,
+    context_response,
     episode_response,
     memory_response,
     operation_response,
+    search_response,
     version_response,
 )
 
@@ -29,6 +36,7 @@ def create_router(
     service: MemoryService,
     authenticate: Callable[[str], Awaitable[RequestContext]],
     episode_service: EpisodeService | None = None,
+    retrieval_service: RetrievalService | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/v1", tags=["memories"])
 
@@ -84,6 +92,42 @@ def create_router(
         return MemoryListResponse(
             items=[memory_response(item) for item in items], next_cursor=next_cursor
         )
+
+    if retrieval_service is not None:
+
+        @router.post("/memories/search", response_model=SearchResponse)
+        async def search_memories(
+            payload: SearchRequest, trusted: TrustedContext
+        ) -> SearchResponse:
+            result = await retrieval_service.search(
+                trusted,
+                query=payload.query,
+                subject_id=payload.subject_id,
+                filters=payload.filters.to_filters(),
+                top_k=payload.top_k,
+                deadline_seconds=payload.deadline_seconds,
+            )
+            return search_response(result)
+
+        @router.post("/context/compile", response_model=ContextResponse)
+        async def compile_memory_context(
+            payload: CompileContextRequest, trusted: TrustedContext
+        ) -> ContextResponse:
+            result = await retrieval_service.search(
+                trusted,
+                query=payload.query,
+                subject_id=payload.subject_id,
+                filters=payload.filters.to_filters(),
+                top_k=payload.top_k,
+                deadline_seconds=payload.deadline_seconds,
+            )
+            package = compile_context(
+                result.items,
+                payload.total_budget,
+                payload.reserved_instruction_tokens + payload.reserved_task_tokens,
+                result.status,
+            )
+            return context_response(package)
 
     @router.get("/memories/{memory_id}", response_model=MemoryResponse)
     async def get_memory(memory_id: UUID, trusted: TrustedContext) -> MemoryResponse:
