@@ -8,6 +8,7 @@ dependencies = [
   "asyncpg>=0.30.0",
   "memory-application",
   "memory-domain",
+  "memory-retrieval",
   "pgvector>=0.4.1",
   "sqlalchemy[asyncio]>=2.0.43",
 ]
@@ -15,6 +16,7 @@ dependencies = [
 [tool.uv.sources]
 memory-application = { workspace = true }
 memory-domain = { workspace = true }
+memory-retrieval = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

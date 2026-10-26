@@ -39,6 +39,10 @@ class PostgresMemoryRepository:
     def __init__(self, database_url: str, *, engine: AsyncEngine | None = None) -> None:
         self._engine = engine or create_async_engine(database_url, pool_pre_ping=True)
 
+    @property
+    def engine(self) -> AsyncEngine:
+        return self._engine
+
     async def authenticate(self, api_key: str) -> RequestContext:
         digest = hashlib.sha256(api_key.encode()).hexdigest()
         async with self._engine.connect() as connection:

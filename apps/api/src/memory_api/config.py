@@ -8,7 +8,7 @@ class ApiSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="MEMORY_", env_file=".env", extra="ignore")
 
     database_url: str = Field(default="postgresql+asyncpg://memory:memory@localhost:55432/memory")
-    migration_revision: str = "0002_memory_kernel"
+    migration_revision: str = "0004_hybrid_retrieval"
     log_level: str = "info"
 
 
