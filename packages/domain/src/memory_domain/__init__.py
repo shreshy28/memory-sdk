@@ -1,5 +1,13 @@
 """Framework-free domain primitives for the memory platform."""
 
+from memory_domain.consolidation import (
+    ConsolidationAction,
+    ConsolidationInput,
+    ConsolidationProposal,
+    ConsolidationRejectedError,
+    ConsolidationRejection,
+    propose_consolidation,
+)
 from memory_domain.episode import Episode, EpisodeKind, EpisodeNotFoundError, EpisodeStatus
 from memory_domain.health import ComponentStatus, HealthReport
 from memory_domain.identity import AuthorizationError, RequestContext
@@ -22,6 +30,11 @@ from memory_domain.policy import is_currently_eligible
 __all__ = [
     "AuthorizationError",
     "ComponentStatus",
+    "ConsolidationAction",
+    "ConsolidationInput",
+    "ConsolidationProposal",
+    "ConsolidationRejectedError",
+    "ConsolidationRejection",
     "ConcurrentCorrectionError",
     "DirectEvidence",
     "Episode",
@@ -42,4 +55,5 @@ __all__ = [
     "RequestContext",
     "Sensitivity",
     "is_currently_eligible",
+    "propose_consolidation",
 ]
